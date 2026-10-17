@@ -1,4 +1,3 @@
-"""Self-hosted MCP adapter for Richy1989/keepIT REST API."""
 import asyncio
 import hmac
 import os
@@ -8,6 +7,7 @@ from typing import Any
 import httpx
 import uvicorn
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 KEEPIT_URL = os.environ['KEEPIT_URL'].rstrip('/')
 KEEPIT_EMAIL = os.environ['KEEPIT_EMAIL']
@@ -53,7 +53,14 @@ class KeepITClient:
         await self.http.aclose()
 
 client = KeepITClient()
-mcp = FastMCP('keepit-mcp', stateless_http=True, json_response=True)
+mcp = FastMCP(
+    "keepit-mcp",
+    stateless_http=True,
+    json_response=True,
+    transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=False
+    ),
+)
 
 @mcp.tool()
 async def list_notes() -> Any:
