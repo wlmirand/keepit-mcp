@@ -1,0 +1,13 @@
+services:
+  keepit-mcp:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8090:8000"
+    environment:
+      KEEPIT_URL: "${KEEPIT_URL}"
+      KEEPIT_EMAIL: "${KEEPIT_EMAIL}"
+      KEEPIT_PASSWORD: "${KEEPIT_PASSWORD}"
+      MCP_API_KEY: "${MCP_API_KEY}"
+    security_opt:
+      - no-new-privileges:true
