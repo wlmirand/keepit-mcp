@@ -2,12 +2,17 @@ services:
   keepit-mcp:
     build: .
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:8090:8000"
     environment:
-      KEEPIT_URL: "${KEEPIT_URL}"
-      KEEPIT_EMAIL: "${KEEPIT_EMAIL}"
-      KEEPIT_PASSWORD: "${KEEPIT_PASSWORD}"
-      MCP_API_KEY: "${MCP_API_KEY}"
-    security_opt:
-      - no-new-privileges:true
+      KEEPIT_URL: ${KEEPIT_URL:-http://keepit:80}
+      KEEPIT_EMAIL: ${KEEPIT_EMAIL:-}
+      KEEPIT_PASSWORD: ${KEEPIT_PASSWORD:-}
+      KEEPIT_TOKEN: ${KEEPIT_TOKEN:-}
+      MCP_API_KEY: ${MCP_API_KEY:?Set MCP_API_KEY in .env}
+      MAX_MEDIA_BYTES: ${MAX_MEDIA_BYTES:-8388608}
+    ports:
+      - "127.0.0.1:8000:8000"
+    networks:
+      - keepit_network
+networks:
+  keepit_network:
+    external: true
