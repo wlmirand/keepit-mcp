@@ -238,7 +238,13 @@ async def append_checklist_item(
             "order": next_order + index,
         })
 
-    return await _update_checklist_items(note_id, note, items)
+    await _update_checklist_items(note_id, note, items)
+
+    #Lets return something smaller than the full list
+    return {
+        "added": texts,
+        "count": len(texts),
+    }
 
 
 @mcp.tool()
@@ -287,12 +293,11 @@ async def remove_checklist_item_by_id(
         if not item.get("id") or uid(item["id"]) not in found_ids
     ]
 
-    result = await _update_checklist_items(note_id, note, remaining)
+    await _update_checklist_items(note_id, note, remaining)
 
     return {
         "removed": sorted(found_ids),
         "ignored": sorted(ignored_ids),
-        "note": result,
     }
 
 @mcp.tool()
@@ -363,13 +368,39 @@ async def remove_checklist_item_by_name(
         not in removable
     ]
 
-    result = await _update_checklist_items(note_id, note, remaining)
+    await _update_checklist_items(note_id, note, remaining)
 
+    #Lets not return the full list
     return {
         "removed": [targets[key] for key in removable],
         "ignored": ignored,
         "ambiguous": ambiguous,
-        "note": result,
+    }
+
+@mcp.tool()
+async def clear_checklist(note_id: str) -> Any:
+    """Remove all items from a checklist without deleting the note."""
+    note = await get_note(note_id)
+
+    if note.get("type") != "Checklist":
+        raise ValueError("The specified note is not a checklist")
+
+    if not note.get("canEdit", False):
+        raise ValueError("You do not have permission to edit this note")
+
+    items = note.get("checklistItems") or []
+
+    if not items:
+        return {
+            "cleared": True,
+            "removed_count": 0,
+        }
+
+    await _update_checklist_items(note_id, note, [])
+
+    return {
+        "cleared": True,
+        "removed_count": len(items),
     }
 
 @mcp.tool()
