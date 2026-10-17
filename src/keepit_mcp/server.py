@@ -198,10 +198,20 @@ async def _update_checklist_items(
 
 
 @mcp.tool()
-async def append_checklist_item(note_id: str, text: str) -> Any:
-    """Append a new unchecked item to the end of a checklist note."""
-    if not text.strip() or len(text) > 2000:
-        raise ValueError("Item text must contain 1 to 2000 characters")
+async def append_checklist_item(
+    note_id: str,
+    texts: str | list[str],
+) -> Any:
+    """Append one or more unchecked items to the end of a checklist."""
+    if isinstance(texts, str):
+        texts = [texts]
+
+    if not texts:
+        raise ValueError("At least one item is required")
+
+    for text in texts:
+        if not isinstance(text, str) or not text.strip() or len(text) > 2000:
+            raise ValueError("Each item must contain 1 to 2000 characters")
 
     note = await get_note(note_id)
 
@@ -213,27 +223,37 @@ async def append_checklist_item(note_id: str, text: str) -> Any:
 
     items = list(note.get("checklistItems") or [])
 
-    if len(items) >= 500:
-        raise ValueError("Checklist has reached the maximum of 500 items")
+    if len(items) + len(texts) > 500:
+        raise ValueError("Checklist cannot exceed 500 items")
 
     next_order = max(
         (item["order"] for item in items),
         default=-1,
     ) + 1
 
-    items.append({
-        "text": text,
-        "isChecked": False,
-        "order": next_order,
-    })
+    for index, text in enumerate(texts):
+        items.append({
+            "text": text.strip(),
+            "isChecked": False,
+            "order": next_order + index,
+        })
 
     return await _update_checklist_items(note_id, note, items)
 
 
 @mcp.tool()
-async def remove_checklist_item(note_id: str, item_id: str) -> Any:
-    """Remove a single checklist item by its UUID."""
-    target_id = uid(item_id)
+async def remove_checklist_item_by_id(
+    note_id: str,
+    item_ids: str | list[str],
+) -> Any:
+    """Remove existing checklist items by UUID, ignoring missing IDs."""
+    if isinstance(item_ids, str):
+        item_ids = [item_ids]
+
+    if not item_ids:
+        raise ValueError("At least one item ID is required")
+
+    target_ids = {uid(item_id) for item_id in item_ids}
 
     note = await get_note(note_id)
 
@@ -245,20 +265,112 @@ async def remove_checklist_item(note_id: str, item_id: str) -> Any:
 
     items = list(note.get("checklistItems") or [])
 
+    existing_ids = {
+        uid(item["id"])
+        for item in items
+        if item.get("id")
+    }
+
+    found_ids = target_ids & existing_ids
+    ignored_ids = target_ids - existing_ids
+
+    if not found_ids:
+        return {
+            "removed": [],
+            "ignored": sorted(ignored_ids),
+            "message": "No matching checklist items found",
+        }
+
     remaining = [
         item
         for item in items
-        if item.get("id") and uid(item["id"]) != target_id
+        if not item.get("id") or uid(item["id"]) not in found_ids
     ]
 
-    if len(remaining) == len(items):
-        raise ValueError(f"Checklist item {target_id} was not found")
+    result = await _update_checklist_items(note_id, note, remaining)
 
-    return await _update_checklist_items(
-        note_id,
-        note,
-        remaining,
-    )
+    return {
+        "removed": sorted(found_ids),
+        "ignored": sorted(ignored_ids),
+        "note": result,
+    }
+
+@mcp.tool()
+async def remove_checklist_item_by_name(
+    note_id: str,
+    texts: str | list[str],
+) -> Any:
+    """Remove checklist items by text, ignoring missing or ambiguous names."""
+    if isinstance(texts, str):
+        texts = [texts]
+
+    if not texts:
+        raise ValueError("At least one item name is required")
+
+    targets = {
+        text.strip().casefold(): text.strip()
+        for text in texts
+        if isinstance(text, str) and text.strip()
+    }
+
+    if not targets:
+        raise ValueError("At least one valid item name is required")
+
+    note = await get_note(note_id)
+
+    if note.get("type") != "Checklist":
+        raise ValueError("The specified note is not a checklist")
+
+    if not note.get("canEdit", False):
+        raise ValueError("You do not have permission to edit this note")
+
+    items = list(note.get("checklistItems") or [])
+
+    counts = {}
+    for item in items:
+        key = (item.get("text") or "").strip().casefold()
+        counts[key] = counts.get(key, 0) + 1
+
+    removable = {
+        key for key in targets
+        if counts.get(key, 0) == 1
+    }
+
+    ignored = [
+        targets[key]
+        for key in targets
+        if counts.get(key, 0) == 0
+    ]
+
+    ambiguous = [
+        targets[key]
+        for key in targets
+        if counts.get(key, 0) > 1
+    ]
+
+    if not removable:
+        return {
+            "removed": [],
+            "ignored": ignored,
+            "ambiguous": ambiguous,
+            "message": "No unambiguous matching items found",
+        }
+
+    remaining = [
+        item
+        for item in items
+        if (item.get("text") or "").strip().casefold()
+        not in removable
+    ]
+
+    result = await _update_checklist_items(note_id, note, remaining)
+
+    return {
+        "removed": [targets[key] for key in removable],
+        "ignored": ignored,
+        "ambiguous": ambiguous,
+        "note": result,
+    }
 
 @mcp.tool()
 async def delete_note(note_id: str, confirm: bool = False) -> Any:
