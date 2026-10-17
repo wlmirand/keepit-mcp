@@ -180,6 +180,85 @@ async def update_note(note_id: str, title: str | None = None, body: str | None =
     data.update({key: value for _, key, value in provided})
     return await api('PUT', f'/api/notes/{uid(note_id)}', payload=data)
 
+async def _update_checklist_items(
+    note_id: str,
+    note: dict[str, Any],
+    items: list[dict[str, Any]],
+) -> Any:
+    """Update checklist items without changing unrelated note fields."""
+    return await api(
+        "PUT",
+        f"/api/notes/{uid(note_id)}",
+        payload={
+            "type": note["type"],
+            "fields": ["ChecklistItems"],
+            "checklistItems": items,
+        },
+    )
+
+
+@mcp.tool()
+async def append_checklist_item(note_id: str, text: str) -> Any:
+    """Append a new unchecked item to the end of a checklist note."""
+    if not text.strip() or len(text) > 2000:
+        raise ValueError("Item text must contain 1 to 2000 characters")
+
+    note = await get_note(note_id)
+
+    if note.get("type") != "Checklist":
+        raise ValueError("The specified note is not a checklist")
+
+    if not note.get("canEdit", False):
+        raise ValueError("You do not have permission to edit this note")
+
+    items = list(note.get("checklistItems") or [])
+
+    if len(items) >= 500:
+        raise ValueError("Checklist has reached the maximum of 500 items")
+
+    next_order = max(
+        (item["order"] for item in items),
+        default=-1,
+    ) + 1
+
+    items.append({
+        "text": text,
+        "isChecked": False,
+        "order": next_order,
+    })
+
+    return await _update_checklist_items(note_id, note, items)
+
+
+@mcp.tool()
+async def remove_checklist_item(note_id: str, item_id: str) -> Any:
+    """Remove a single checklist item by its UUID."""
+    target_id = uid(item_id)
+
+    note = await get_note(note_id)
+
+    if note.get("type") != "Checklist":
+        raise ValueError("The specified note is not a checklist")
+
+    if not note.get("canEdit", False):
+        raise ValueError("You do not have permission to edit this note")
+
+    items = list(note.get("checklistItems") or [])
+
+    remaining = [
+        item
+        for item in items
+        if item.get("id") and uid(item["id"]) != target_id
+    ]
+
+    if len(remaining) == len(items):
+        raise ValueError(f"Checklist item {target_id} was not found")
+
+    return await _update_checklist_items(
+        note_id,
+        note,
+        remaining,
+    )
 
 @mcp.tool()
 async def delete_note(note_id: str, confirm: bool = False) -> Any:
