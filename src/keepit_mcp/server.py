@@ -228,7 +228,7 @@ async def append_checklist_item(
         default=-1,
     ) + 1
 
-    changed = False
+    added = []
 
     for text in texts:
         normalized_text = text.strip()
@@ -245,7 +245,7 @@ async def append_checklist_item(
         if existing:
             if existing["isChecked"]:
                 existing["isChecked"] = False
-                changed = True
+                added.append(normalized_text)
         else:
             if len(items) >= 500:
                 raise ValueError("Checklist cannot exceed 500 items")
@@ -257,14 +257,14 @@ async def append_checklist_item(
             })
 
             next_order += 1
-            changed = True
+            added.append(normalized_text)
 
-    if changed:
+    if added:
         await _update_checklist_items(note_id, note, items)
 
     return {
-        "added": texts,
-        "count": len(texts),
+        "added": added,
+        "count": len(added),
     }
 
 
