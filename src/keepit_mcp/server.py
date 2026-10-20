@@ -202,7 +202,7 @@ async def append_checklist_item(
     note_id: str,
     texts: str | list[str],
 ) -> Any:
-    """Append one or more unchecked items to the end of a checklist."""
+    """Append new checklist items or uncheck existing ones."""
     if isinstance(texts, str):
         texts = [texts]
 
@@ -223,24 +223,45 @@ async def append_checklist_item(
 
     items = list(note.get("checklistItems") or [])
 
-    if len(items) + len(texts) > 500:
-        raise ValueError("Checklist cannot exceed 500 items")
-
     next_order = max(
         (item["order"] for item in items),
         default=-1,
     ) + 1
 
-    for index, text in enumerate(texts):
-        items.append({
-            "text": text.strip(),
-            "isChecked": False,
-            "order": next_order + index,
-        })
+    changed = False
 
-    await _update_checklist_items(note_id, note, items)
+    for text in texts:
+        normalized_text = text.strip()
 
-    #Lets return something smaller than the full list
+        existing = next(
+            (
+                item for item in items
+                if item["text"].strip().casefold()
+                == normalized_text.casefold()
+            ),
+            None,
+        )
+
+        if existing:
+            if existing["isChecked"]:
+                existing["isChecked"] = False
+                changed = True
+        else:
+            if len(items) >= 500:
+                raise ValueError("Checklist cannot exceed 500 items")
+
+            items.append({
+                "text": normalized_text,
+                "isChecked": False,
+                "order": next_order,
+            })
+
+            next_order += 1
+            changed = True
+
+    if changed:
+        await _update_checklist_items(note_id, note, items)
+
     return {
         "added": texts,
         "count": len(texts),
